@@ -5,7 +5,9 @@ import qualified Data.IntMap as M
 
 
 data Graph v e = Graph {
-                    _successors :: M.IntMap [Int]
+                   _neighbors :: M.IntMap [Int]
+
+                   ,_successors :: M.IntMap [Int]
                    ,_predecessors :: M.IntMap [Int]
                    ,_vlabels :: M.IntMap v
                    ,_eLabels :: M.IntMap (M.IntMap e) 
@@ -29,7 +31,6 @@ addDirectedEdge ((i,j), e_label) g =  g'
                         i 
                         (M.singleton j e_label) 
                         (_eLabels g)
-          --_elabels0 = M.insert i _eLabels1 g 
           _successors' = M.insertWith (++) i [j] (_successors g)
           _predecessors' = M.insertWith (++) j [i] (_predecessors g)
           g' = g{_successors = _successors', _predecessors= _predecessors', _eLabels=_eLabels1}
@@ -53,11 +54,18 @@ updateEdge :: (Int, Int) -> e -> Graph v e -> Graph v e
 updateEdge (i,j) newedge g = g{_eLabels = _eLabels'}
     where _eLabels' = M.adjust (M.insert j newedge) i (_eLabels g)
 
-
+--we only add the edge (i,j) with i<j , gives a linear order on the edges
+addEdge :: ((Int, Int), e) -> Graph v e -> Graph v e
+addEdge ((i, j), edge) g = g'
+    where g0 = if i< j then addDirectedEdge ((i,j), edge ) g 
+                           else addDirectedEdge ((j,i), edge) g
+          neighbors = M.insertWith (++) i [j] (_neighbors g)
+          neighbors' = M.insertWith (++) j [i] (neighbors)
+          g' = g0{_neighbors = neighbors'}
 
 
 emptyGraph :: Graph v e
-emptyGraph = Graph M.empty M.empty M.empty M.empty
+emptyGraph = Graph M.empty M.empty M.empty M.empty M.empty
 
 mkGraph :: [(Int, v)] -> [((Int,Int), e)] -> Graph v e
 mkGraph vertices edges = g'
@@ -66,11 +74,20 @@ mkGraph vertices edges = g'
           _eLabels0 g = foldr addDirectedEdge g edges
           g' = _eLabels0 $ _vlabels0 g0  
 
+
+mkClique :: Int -> Graph (Maybe v) (Maybe e)
+mkClique n = mkGraph lvertices ledges
+    where lvertices = zip [1..n] (repeat Nothing)
+          ledges = zip [(i,j) | i <-[2..n], j <-[1..n-1], j<i] (repeat Nothing)
+          
 getVertices :: Graph v e -> [(Int, v)] 
 getVertices g = M.assocs $ _vlabels g
 
 getEdges :: Graph v e -> [((Int, Int), e)] 
 getEdges g = [((i,j), label) | (i,dedge) <- M.assocs $ _eLabels g, (j,label) <- M.assocs dedge]
+
+getSize :: Graph v e -> (Int, Int)
+getSize g = (length $ getVertices g, length $ getEdges g)
 
 getVertexLabel :: Int -> Graph v e ->  Maybe v
 getVertexLabel i g = M.lookup i (_vlabels g)
@@ -97,13 +114,26 @@ getSuccessors i g = M.lookup i (_successors g)
 getPredecessors :: Int -> Graph v e -> Maybe [Int]
 getPredecessors i g = M.lookup i (_predecessors g)
 
-filterVertices :: ( Int -> v-> Bool ) -> Graph v e -> M.IntMap v
-filterVertices f g = vlist
+selectVertices :: ( Int -> v-> Bool ) -> Graph v e -> M.IntMap v
+selectVertices f g = vlist
     where vlist = M.filterWithKey f (_vlabels g) 
 
-{-filterEdges :: (Int -> Int -> e -> Bool) -> Graph v e -> M.IntMap (M.IntMap e)
+filterByVertices :: ( Int -> v-> Bool ) -> Graph v e -> Graph v e 
+filterByVertices f g = g{_vlabels=vlist}
+    where vlist = selectVertices f g
+
+{-filterEdges :: (Int -> e -> Bool) -> Graph v e -> M.IntMap (M.IntMap e)
 filterEdges f g = undefined
-   -- where elist = M.filterWithKey f (_eLabels g) -}
+   where elist = zipWith  M.filterWithKey f [_eLabels g] -}
+
+selectEdges :: (Int -> M.IntMap e-> Bool) -> Graph v e -> M.IntMap (M.IntMap e)
+selectEdges f g =elist
+    where elist = M.filterWithKey f (_eLabels g)
+
+filterByEdges :: (Int -> M.IntMap e-> Bool) -> Graph v e -> Graph v e 
+filterByEdges f g = g{_eLabels = elist}
+    where elist = selectEdges f g
+
 
 instance (Show v, Show e) => Show (Graph v e)
     where show g = "Vertices: " ++  show (M.assocs $ _vlabels g) 
